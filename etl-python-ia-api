@@ -1,0 +1,53 @@
+import pandas as pd
+import requests
+import json
+import openai
+import yfinance as yf
+
+# Configurar sua chave de API do OpenAI
+openai.api_key = 'openai_api_key'
+
+# URL da sua API SDW 2023
+sdw2023_api_url = 'https://sdw-2023-prd.up.railway.app'
+
+# Extração de dados do CSV ou de qualquer outra fonte
+df = pd.read_csv('SDW.csv')
+user_ids = df['UserID'].tolist()
+
+def get_user(id):
+    response = requests.get(f'{sdw2023_api_url}/users/{id}')
+    return response.json() if response.status_code == 200 else None
+
+users = [user for id in user_ids if (user := get_user(id)) is not None]
+
+def generate_market_analysis(user):
+    # Obter dados de ações recentes
+    stock_data = yf.download(user['favorite_stock'], period="1d")
+    
+    # Gerar análise de mercado com base nos dados
+    analysis_prompt = f"Análise de mercado para {user['favorite_stock']} em {stock_data.index[0]}: Os preços das ações abriram em {stock_data['Open'][0]} e fecharam em {stock_data['Close'][0]} hoje."
+    
+    # Usar o prompt de análise de mercado para gerar insights
+    completion = openai.Completion.create(
+        engine="text-davinci-002",
+        prompt=analysis_prompt,
+        max_tokens=200  # Ajuste o número de tokens conforme necessário
+    )
+    
+    market_analysis = completion.choices[0].text.strip()
+    
+    return market_analysis
+
+for user in users:
+    market_analysis = generate_market_analysis(user)
+    print(f"Análise de mercado para {user['favorite_stock']}:\n{market_analysis}")
+    user['market_analysis'] = market_analysis
+
+# Atualizar os usuários com as análises de mercado
+def update_user(user):
+    response = requests.put(f"{sdw2023_api_url}/users/{user['id']}", json=user)
+    return True if response.status_code == 200 else False
+
+for user in users:
+    success = update_user(user)
+    print(f"Usuário {user['name']} atualizado? {success}!")
